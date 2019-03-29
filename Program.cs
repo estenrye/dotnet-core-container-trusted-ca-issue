@@ -5,6 +5,7 @@ using System.Linq;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
@@ -63,11 +64,43 @@ namespace thycotic_sdk_issue
       }
     }
 
+public Func<System.Net.Http.HttpRequestMessage,System.Security.Cryptography.X509Certificates.X509Certificate2,System.Security.Cryptography.X509Certificates.X509Chain,System.Net.Security.SslPolicyErrors,bool> ServerCertificateCustomValidationCallback { get; set; }
     static void VerifyConnectivityToTokenApi(IConfigurationSection config)
     {
       Log.Debug("Testing Server Connectivity via the token api endpoint.");
 
-      var httpClient = new HttpClient();
+      var handler = new SocketsHttpHandler();
+      handler.SslOptions.RemoteCertificateValidationCallback = (sender, remoteCertificate, chain, policyErrors) => {
+        if (policyErrors == SslPolicyErrors.None)
+        {
+          Log.Debug("No TLS Policy Errors.");
+        }
+
+        if (policyErrors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors))
+        {
+          Log.Debug("TLS Policy Chain Errors");
+
+          foreach(var status in chain.ChainStatus)
+          {
+            Log.Debug($"Chain Status: {status.StatusInformation}");
+          }
+        }
+
+        if (policyErrors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
+        {
+          Log.Debug("TLS Remote Certificate Name Mismatch");
+        }
+
+        if (policyErrors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable))
+        {
+          Log.Debug("TLS Remote Certificate Not Available");
+        }
+
+        return false;
+      };
+      
+      var httpClient = new HttpClient(handler);
+      
       var url = config.GetValue<string>("Uri");
 
       var tokenUriBuilder = new UriBuilder(url)
