@@ -5,6 +5,7 @@ using System.Linq;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Serilog;
@@ -28,6 +29,8 @@ namespace thycotic_sdk_issue
   {
     static void Main(string[] args)
     {
+      DisplayThycoticEnvironmentVariables();
+      var httpClient = new HttpClient();
       var builder = new ConfigurationBuilder()
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
         .AddEnvironmentVariables();
@@ -40,8 +43,15 @@ namespace thycotic_sdk_issue
         .MinimumLevel.Debug()
         .CreateLogger();
       
-      Log.Debug("Thycotic Secret Server Initialization");
+      Log.Debug("Loading Configuration from Config Section");
+      var config = configuration.GetSection("Thycotic");
 
+      VerifyConnectivityToTokenApi(config);
+      DemonstrateSdkFunctionality(config);
+    }
+
+    static void DisplayThycoticEnvironmentVariables()
+    {
       var env = System.Environment.GetEnvironmentVariables();
 
       Log.Debug("Loading Thycotic Environment Variables");
@@ -51,62 +61,96 @@ namespace thycotic_sdk_issue
           Log.Debug($"{e.Key}={e.Value}");
         }
       }
-      var config = configuration.GetSection("Thycotic");
+    }
+
+    static void VerifyConnectivityToTokenApi(IConfigurationSection config)
+    {
+      Log.Debug("Testing Server Connectivity via the token api endpoint.");
+
+      var httpClient = new HttpClient();
       var url = config.GetValue<string>("Uri");
-      var ruleName = config.GetValue<string>("RuleName");
-      var ruleKey = config.GetValue<string>("RuleKey");
-      var cacheAge = config.GetValue<int>("CacheAge");
-      var templateName = config.GetValue<string>("SecretTemplateName");
-      var searchText = config.GetValue<string>("SearchText");
 
-      var resetToken = Path.GetRandomFileName().Replace(".", string.Empty);
-
-      var configLog = new {
-        Uri = url,
-        RuleName = ruleName,
-        RuleKey = ruleKey,
-        CacheAge = cacheAge,
-        SecretTemplateName = templateName,
-        SearchText = searchText,
-        ResetToken = resetToken
+      var tokenUriBuilder = new UriBuilder(url)
+      {
+        Path = "/oauth2/token",
       };
 
-      Log.Debug($"Loaded Configuration: \n{JsonConvert.SerializeObject(configLog, Formatting.Indented)}");
+      var body = JsonConvert.SerializeObject(new {
+        username = config.GetValue<string>("Username"),
+        password = config.GetValue<string>("Password"),
+        granttype = config.GetValue<string>("GrantType")
+      }, Formatting.Indented);
 
-      var client = new SecretServerClient();
+      Log.Debug($"Submitting Post Request\nRequest Uri: {tokenUriBuilder.Uri.AbsoluteUri}\nBody: {body}");
 
-      Log.Debug("Client Constructed. Configuring Thycotic SecretServerClient");
+      var message = new HttpRequestMessage(HttpMethod.Post, tokenUriBuilder.Uri.AbsoluteUri);
+      message.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+      var tokenResponse = httpClient.SendAsync(message).Result;
+      var tokenContent = tokenResponse.Content.ReadAsStringAsync().Result;
 
-      client.Configure(new ConfigSettings
-      {
-        SecretServerUrl = url,
-        RuleName = ruleName,
-        RuleKey = ruleKey,
-        CacheStrategy = CacheStrategy.CacheThenServerAllowExpired,
-        CacheAge = cacheAge,
-        ResetToken = resetToken
-      });
+      Log.Debug($"StatusCode: {tokenResponse.StatusCode}\nToken Content: {tokenContent}");
+    }
 
-      Log.Debug("Thycotic Secret Server Client Initialized");
+    static int SearchSecretId(SecretServerClient client, string uri, string template, string name)
+    {
+      Log.Debug("Using Rest API to search secrets.");
 
-      var uriBuilder = new UriBuilder(url)
+      var httpClient = new HttpClient();
+
+      var uriBuilder = new UriBuilder(uri)
       {
         Path = "/api/v1/secrets",
-        Query = $"secretTemplateName={templateName}&filter.searchText={searchText}"
+        Query = $"secretTemplateName={template}&filter.searchText={name}"
       };
 
-      Log.Debug($"Secret Server Search Uri: {uriBuilder.Uri.AbsoluteUri}");
+      Log.Debug($"Secret Server Search Uri: {uriBuilder.Uri.AbsoluteUri}" );
 
       // Would be really nice if the SDK had a function to do this:
       var requestMessage = new HttpRequestMessage(HttpMethod.Get, uriBuilder.Uri.AbsoluteUri);
       requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", client.GetAccessToken());
-      var httpClient = new HttpClient();
       var result = httpClient.SendAsync(requestMessage).Result;
       var secretResponse = result.Content.ReadAsStringAsync().Result;
       var secretRecords = JsonConvert.DeserializeObject<PagingOfSecretSummary>(secretResponse);
       var secretId = secretRecords.Records[0].Id;
 
       Log.Debug($"Retrieving Secret Id '{secretId}' from Secret Server.");
+      return secretId;
+    }
+
+    static void DemonstrateSdkFunctionality(IConfigurationSection config)
+    {
+      Log.Debug("Thycotic Secret Server Constrcutor");
+      var client = new SecretServerClient();
+
+      Log.Debug("Loading Configuration from Config Section");
+
+      var sdkConfig = new {
+        Uri = config.GetValue<string>("Uri"),
+        RuleName = config.GetValue<string>("RuleName"),
+        RuleKey = config.GetValue<string>("RuleKey"),
+        CacheAge = config.GetValue<int>("CacheAge"),
+        ResetToken = Path.GetRandomFileName().Replace(".", string.Empty)
+      };
+
+      Log.Debug($"Loaded Configuration: \n{JsonConvert.SerializeObject(sdkConfig, Formatting.Indented)}");
+
+      Log.Debug("Configuring Thycotic SecretServerClient");
+
+      client.Configure(new ConfigSettings
+      {
+        SecretServerUrl = sdkConfig.Uri,
+        RuleName = sdkConfig.RuleName,
+        RuleKey = sdkConfig.RuleKey,
+        CacheStrategy = CacheStrategy.CacheThenServerAllowExpired,
+        CacheAge = sdkConfig.CacheAge,
+        ResetToken = sdkConfig.ResetToken
+      });
+
+      Log.Debug("Thycotic Secret Server Client Initialized");
+
+      var templateName = config.GetValue<string>("SecretTemplateName");
+      var searchText = config.GetValue<string>("SearchText");
+      var secretId = SearchSecretId(client, sdkConfig.Uri, templateName, searchText);
 
       var secret = client.GetSecret(secretId);
 
