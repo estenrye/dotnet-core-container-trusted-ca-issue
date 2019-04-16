@@ -74,6 +74,7 @@ public Func<System.Net.Http.HttpRequestMessage,System.Security.Cryptography.X509
         if (policyErrors == SslPolicyErrors.None)
         {
           Log.Debug("No TLS Policy Errors.");
+          return true;
         }
 
         if (policyErrors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors))
