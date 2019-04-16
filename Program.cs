@@ -71,6 +71,25 @@ public Func<System.Net.Http.HttpRequestMessage,System.Security.Cryptography.X509
 
       var handler = new SocketsHttpHandler();
       handler.SslOptions.RemoteCertificateValidationCallback = (sender, remoteCertificate, chain, policyErrors) => {
+        foreach (var element in chain.ChainElements)
+        {
+          Log.Debug ("Element name: {0}", element.Certificate.SubjectName.Name);
+          Log.Debug ("Element issuer name: {0}", element.Certificate.Issuer);
+          Log.Debug ("Element certificate valid until: {0}", element.Certificate.NotAfter);
+          Log.Debug ("Element certificate is valid: {0}", element.Certificate.Verify ());
+          Log.Debug ("Element error status length: {0}", element.ChainElementStatus.Length);
+          Log.Debug ("Element information: {0}", element.Information);
+          Log.Debug ("Number of element extensions: {0}", element.Certificate.Extensions.Count);
+          Log.Debug ("Number of ChainElementStatuses: {0}", element.ChainElementStatus.Length);
+          if (element.ChainElementStatus.Length > 0)
+          {
+            for (int index = 0; index < element.ChainElementStatus.Length; index++)
+            {
+              Log.Debug ("{0}: {1}", element.ChainElementStatus[index].Status, element.ChainElementStatus[index].StatusInformation);
+            }
+          }
+          Console.WriteLine(Environment.NewLine);
+        }
         if (policyErrors == SslPolicyErrors.None)
         {
           Log.Debug("No TLS Policy Errors.");
@@ -190,7 +209,7 @@ public Func<System.Net.Http.HttpRequestMessage,System.Security.Cryptography.X509
 
       foreach(var item in secret.Items)
       {
-        Console.WriteLine($"{item.Slug}: {item.ItemValue}");
+        Log.Debug($"{item.Slug}: {item.ItemValue}");
       }
     }
   }
