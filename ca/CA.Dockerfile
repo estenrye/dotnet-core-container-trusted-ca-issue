@@ -1,7 +1,7 @@
 # https://www.greenreedtech.com/building-a-lightweight-ceritifcate-authority/
 FROM cfssl/cfssl:latest
-COPY ./certs/intermediate.local.cer ca.pem
-COPY certs/intermediate.local.key ca-key.pem
+COPY ./certs/signing-ca.crt ca.pem
+COPY certs/signing-ca/private/signing-ca.key ca-key.pem
 
 EXPOSE 8888
 
