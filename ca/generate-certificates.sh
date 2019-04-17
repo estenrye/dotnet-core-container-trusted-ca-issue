@@ -8,6 +8,7 @@ docker network create ssl-test
 rm -rf ${DIR}/../certs
 mkdir -p ${DIR}/../certs
 
+# https://pki-tutorial.readthedocs.io/en/latest/
 # Generate Root CA
 mkdir -p ${DIR}/../certs/root-ca/private ${DIR}/../certs/root-ca/db ${DIR}/../crl
 chmod 700 ${DIR}/../certs/root-ca/private
